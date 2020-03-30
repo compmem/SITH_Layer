@@ -62,8 +62,8 @@ def _calc_invL(s, k):
 class SITH(nn.Module):
     """SITH implementation."""
     def __init__(self, in_features, tau_0=.1, dt=None, k=4, c=.1,
-                ntau=100, s_toskip=0, T_every=8, alpha=1.0,
-                ttype=torch.DoubleTensor, device='cpu'):
+                 alpha=1.0, g=0, ntau=100, s_toskip=0, T_every=8, 
+                 ttype=torch.DoubleTensor):
         """The SITH layer has a lot of different parameters that allow you to fine 
         tune exactly how compressed you want the historical representation to be.
 
@@ -72,19 +72,26 @@ class SITH(nn.Module):
             in_features: int
                 Number of tracked features
             tau_0: float (default = 1)
-                The center of the first receptive field in inverse-Lapace space. 
-            dt: float (optional, default=None)
-                The presentation time-delta of each stimulus to the representation.
-                Likely to be the same value as tau_0, unless you want more granular
-                control of how things are presented to the representation. 
-            k: int
+                The center of the first receptive field in inverse-Lapace space. The
+                presentation time of each stimulus.
+            dt: float (default=.1)
+                The input will be presented to the representation at tau_0 / dt seconds.
+                This will smooth the exponential decay, and provide a better estimate of 
+                the past in the final inverse-laplace representation.
+            k: int (default = 4)
                 The spcificity of the receptive fields
             c: float
                 The degree of historical compression. Smaller numbers means greater
                 numbers of tau*s will be dedicated to tracking the more recent past
             alpha: float
-
-            ntau: int
+            g: float (default = 0)
+                A conditionditioning parameter. This will determine if the end result 
+                of this layer, big T, is multiplied by tau_stars or not.  If g is 0, 
+                then big T will have smaller and smaller activations further into the 
+                past. If g = 1, then all taustars in big T will activate to the same 
+                level at their peak. g can also be bigger than 1, but should never be 
+                less than 0. 
+            ntau: int (default = 100)
                 The desired number of taustars in the final representation, before
                 indexing with T_every
             T_every: int
@@ -93,25 +100,32 @@ class SITH(nn.Module):
         """
 
         super(SITH, self).__init__()
-
+        assert(in_features > 0)
+        assert(tau_0 > 0)
+        assert(ntau > 0)
+        assert(tau_0 >= dt)
+        assert(c > 0)
+        assert(k > 0)
+        
         self._in_features = in_features
         self._tau_0 = tau_0
-        if dt is None:
-            self._dt = self._tau_0
-        else:
-            self._dt = dt
+        
+        self._dt = dt
         self._k = k
         self._c = c
         self._ntau = ntau
         self._T_full_ind = slice(None, None, T_every)
         self._alpha = alpha
+        self._g = g
         self._torch_type = ttype
 
         # calc tau_star and s
         tau_star, s = _calc_tau_star(tau_0=tau_0, k=k, c=c, ntau=ntau)
         self._tau_star = tau_star[s_toskip:].type(ttype)
-        self._output_size = self._tau_star[slice(k, -k, T_every)].shape[0]
-
+        self._subset_tau_star = (self._tau_star[slice(k, -k, T_every)].unsqueeze(1) ** g).repeat(1,in_features)
+        
+        self._output_size = self._subset_tau_star.shape[0]
+        
         self._s = s[s_toskip:].type(ttype)
 
         # make exp diag for exponential decay
@@ -130,7 +144,7 @@ class SITH(nn.Module):
         self._e_alph_dur = torch.exp(self._s*self._alpha*(-1*self._dt))
         self._it = torch.ones((self._s.shape[0], in_features)).type(ttype)
         self._decay = torch.unsqueeze((self._alpha*self._s)**-1 * 
-                                      (self._id_m - self._e_alph_dur), 1)
+                                      (self._id_m - self._e_alph_dur), 1).repeat(1,in_features)
 
 
     def cuda(self, device_id=None):
@@ -142,6 +156,7 @@ class SITH(nn.Module):
         self._id_m = self._id_m.cuda(device=device_id)
         self._e_alph_dur = self._e_alph_dur.cuda(device=device_id)
         self._decay = self._decay.cuda(device=device_id)
+        self._subset_tau_star = self._subset_tau_star.cuda(device=device_id)
     
     @property
     def t(self):
@@ -179,10 +194,10 @@ class SITH(nn.Module):
 
             ## can remove `/dt` once input isn't multiplied by dt anymore
             tIN = tIN*self._alpha
-            self._t = torch.diag(self._e_alph_dur).mm(self._t) + self._decay.mm(item)
+            self._t = torch.diag(self._e_alph_dur**(self._tau_0 / self._dt)).mm(self._t) + self._decay * tIN * (self._tau_0 / self._dt)
 
-            # update T from t and index into it
-            output_tensor[c, :, :] = (self._invL.mm(self._t))[self._T_full_ind, :]
+            # update T from t and index into it, multiply by either taustars or 1 for scaling.
+            output_tensor[c, :, :] = (self._invL.mm(self._t))[self._T_full_ind, :] * self._subset_tau_star
             c += 1
         return output_tensor
     
