@@ -141,10 +141,10 @@ class SITH(nn.Module):
         self._id_m = torch.ones(self._s.shape[0]).type(ttype)
         
         # For each forward pass
-        self._e_alph_dur = torch.exp(self._s*self._alpha*(-1*self._dt))
+        self._e_alph_dt = torch.exp(self._s*self._alpha*(-1*self._dt))
         self._it = torch.ones((self._s.shape[0], in_features)).type(ttype)
         self._decay = torch.unsqueeze((self._alpha*self._s)**-1 * 
-                                      (self._id_m - self._e_alph_dur), 1).repeat(1,in_features)
+                                      (self._id_m - self._e_alph_dt), 1).repeat(1,in_features)
 
 
     def cuda(self, device_id=None):
@@ -154,7 +154,7 @@ class SITH(nn.Module):
         self._it = self._it.cuda(device=device_id)
         self._s = self._s.cuda(device=device_id)
         self._id_m = self._id_m.cuda(device=device_id)
-        self._e_alph_dur = self._e_alph_dur.cuda(device=device_id)
+        self._e_alph_dt = self._e_alph_dt.cuda(device=device_id)
         self._decay = self._decay.cuda(device=device_id)
         self._subset_tau_star = self._subset_tau_star.cuda(device=device_id)
     
@@ -189,9 +189,6 @@ class SITH(nn.Module):
         # For now, we will construct an output tensor, and fill it with each iteration of the loop
         output_tensor = torch.zeros(inp.shape[0], self._output_size, self._in_features)
         
-        # make sure it's a matrix
-        #item = np.asmatrix(item)
-        # present an item for the duration
         c = 0
         for item in inp.split(1, dim=0):
             # At this point, item should be of size (in_features)
@@ -200,7 +197,7 @@ class SITH(nn.Module):
 
             ## can remove `/dt` once input isn't multiplied by dt anymore
             tIN = tIN*self._alpha
-            self._t = (torch.diag(self._e_alph_dur**(dur / self._dt)).mm(self._t) +
+            self._t = (torch.diag(self._e_alph_dt**(dur / self._dt)).mm(self._t) +
                        self._decay * tIN * (dur / self._dt))
 
             # update T from t and index into it, multiply by either taustars or 1 for scaling.
@@ -208,7 +205,6 @@ class SITH(nn.Module):
             c += 1
         return output_tensor
     
-
     def reset(self):
         # reset all to zeros
         self._t.zero_()
