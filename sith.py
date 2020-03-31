@@ -157,6 +157,8 @@ class SITH(nn.Module):
         self._e_alph_dt = self._e_alph_dt.cuda(device=device_id)
         self._decay = self._decay.cuda(device=device_id)
         self._subset_tau_star = self._subset_tau_star.cuda(device=device_id)
+        self._use_cuda = True
+        self._device = device_id
     
     @property
     def t(self):
@@ -187,7 +189,9 @@ class SITH(nn.Module):
         # I don't know if I should cat the output together a bunch (bad idea) 
         # or if I should construct the output as a bunch of concatentations together. 
         # For now, we will construct an output tensor, and fill it with each iteration of the loop
-        output_tensor = torch.zeros(inp.shape[0], self._output_size, self._in_features)
+        output_tensor = torch.zeros(inp.shape[0], self._output_size, self._in_features).type(self._torch_type)
+        if self._use_cuda:
+            output_tensor = output_tensor.cuda(device=self._device)
         
         c = 0
         for item in inp.split(1, dim=0):
