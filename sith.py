@@ -170,13 +170,19 @@ class SITH(nn.Module):
     def tau_star(self):
         return self._tau_star
 
-    def forward(self, inp):
+    def forward(self, inp, dur=None):
         """
         Takes in a t state and updates with item
         This allows for calculation of little t without storing into
             `self._t`
         Returns new little t state
         """        
+        
+        if dur is None:
+            dur = self._tau_0
+        else:
+            dur = dur
+            
         t = self._t
         # I don't know if I should cat the output together a bunch (bad idea) 
         # or if I should construct the output as a bunch of concatentations together. 
@@ -194,7 +200,8 @@ class SITH(nn.Module):
 
             ## can remove `/dt` once input isn't multiplied by dt anymore
             tIN = tIN*self._alpha
-            self._t = torch.diag(self._e_alph_dur**(self._tau_0 / self._dt)).mm(self._t) + self._decay * tIN * (self._tau_0 / self._dt)
+            self._t = (torch.diag(self._e_alph_dur**(dur / self._dt)).mm(self._t) +
+                       self._decay * tIN * (dur / self._dt))
 
             # update T from t and index into it, multiply by either taustars or 1 for scaling.
             output_tensor[c, :, :] = (self._invL.mm(self._t))[self._T_full_ind, :] * self._subset_tau_star
