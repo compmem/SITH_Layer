@@ -201,6 +201,8 @@ class SITH(nn.Module):
 
             ## can remove `/dt` once input isn't multiplied by dt anymore
             tIN = tIN*self._alpha
+            # NOTE: (self._e_alph_dt**(dur / self._dt)*self._t +
+            #           self._decay * tIN * (dur / self._dt))
             self._t = (torch.diag(self._e_alph_dt**(dur / self._dt)).mm(self._t) +
                        self._decay * tIN * (dur / self._dt))
 
