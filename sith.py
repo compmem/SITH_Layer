@@ -123,4 +123,5 @@ class SITH(nn.Module):
         x = torch.bmm(self._Linvk.repeat(x.shape[0], 1, 1),
                       x)[:, self._T_full_ind, :]*self._subset_tau_star.repeat(x.shape[0], 1, 1)
 
+
         return x
