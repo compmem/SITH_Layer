@@ -102,7 +102,7 @@ class SITH(nn.Module):
                            k=k, alpha=alpha, ntau=ntau, ttype=self._type)
         self._Linvk = _calc_Linvk(self.lap.s, self.lap._k, self._type).unsqueeze(0)
         
-        self._tau_star = self.lap._tau_star[slice(self.lap._k, -self.lap._k, self._T_every)]
+        self.tau_star = self.lap._tau_star[slice(self.lap._k, -self.lap._k, self._T_every)].detach().cpu().numpy()
         
         self._subset_tau_star = (self.lap._tau_star[slice(self.lap._k, -self.lap._k, self._T_every)].unsqueeze(1) ** self._g).repeat(1, self._in_features).unsqueeze(0)
         
