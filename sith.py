@@ -52,7 +52,7 @@ class SITH(nn.Module):
     """SITH implementation."""
     def __init__(self, in_features, tau_min=1.0, tau_max=50, k=4,
                  alpha=1.0, g=1.0, ntau=30, T_every=1,
-                 ttype=None):
+                 ttype=torch.FloatTensor):
         """The SITH layer has a lot of different parameters that allow you to fine 
         tune exactly how compressed you want the historical representation to be.
 
@@ -89,27 +89,32 @@ class SITH(nn.Module):
 
         super(SITH, self).__init__()
         
-        self._in_features = in_features
-        self._T_every = T_every
+        self.in_features = in_features
+        self.T_every = T_every
         self._T_full_ind = slice(None, None, T_every)
-        self._alpha = alpha
-        self._g = g
-        if ttype is None:
-            ttype = torch.FloatTensor
+        self.alpha = alpha
+        self.g = g
+
         self._type = ttype
         
-        self.lap = Laplace(in_features=self._in_features, tau_min=tau_min, tau_max=tau_max, 
-                           k=k, alpha=alpha, ntau=ntau, ttype=self._type)
-        self._Linvk = _calc_Linvk(self.lap.s, self.lap._k, self._type).unsqueeze(0)
+        self.lap = Laplace(in_features=in_features, tau_min=tau_min, tau_max=tau_max, 
+                           k=k, alpha=alpha, ntau=ntau, ttype=ttype)
+        self._Linvk = _calc_Linvk(self.lap.s, k, ttype).unsqueeze(0)
         
-        self.tau_star = self.lap._tau_star[slice(self.lap._k, -self.lap._k, self._T_every)].detach().cpu().numpy()
+        self.tau_star = self.lap.tau_star[slice(k, -k, T_every)]
         
-        self._subset_tau_star = (self.lap._tau_star[slice(self.lap._k, -self.lap._k, self._T_every)].unsqueeze(1) ** self._g).repeat(1, self._in_features).unsqueeze(0)
+        self._subset_tau_star = (self.lap.tau_star[slice(k, 
+                                                         -k, 
+                                                         T_every)].unsqueeze(1) ** g).repeat(1, in_features).unsqueeze(0)
         
         
     def reset(self):
         self.lap.reset()
-        
+    
+    def extra_repr(self):
+        s = "out_shape=(1, sequence_len, {tau_star.shape[0]}, {in_features})"
+        s = s.format(**self.__dict__)
+        return s    
         
     def forward(self, inp, dur=None, alpha=None):
         """

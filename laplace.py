@@ -33,74 +33,76 @@ class Laplace(nn.Module):
                 indexing with T_every
     """
         super(Laplace, self).__init__()
-        self._in_features = in_features
-        self._tau_min = tau_min
-        self._tau_max = tau_max
-        self._k = k
-        self._ntau = ntau
-        self._alpha = alpha
+        self.in_features = in_features
+        self.tau_min = tau_min
+        self.tau_max = tau_max
+        self.k = k
+        self.ntau = ntau
+        self.alpha = alpha
 
         if ttype is None:
             ttype = torch.FloatTensor
         self._type = ttype
 
         # determine c from range and save it
-        c = (tau_max/tau_min)**(1./(ntau-1))-1
-        self._c = c
+        self.c = (tau_max/tau_min)**(1./(ntau-1))-1
 
         # calc tau_star and s
-        self._tau_star = tau_min*(1+c)**torch.arange(-k, ntau+k).type(self._type)
-        self.s = k/self._tau_star
+        self.tau_star = tau_min*(1+self.c)**torch.arange(-k, ntau+k).type(ttype)
+        self.s = k/self.tau_star
 
         # pre-calculate e**s
-        self.e_s = torch.exp(-1*self.s)
-        self._output_size = [None, self.s.shape[0], self._in_features]
-        self.t = torch.zeros(self.s.shape[0], self._in_features).type(self._type)
+        self._e_s = torch.exp(-1*self.s)
+        self.output_size = [None, self.s.shape[0], in_features]
+        self.t = torch.zeros(self.s.shape[0], in_features).type(ttype)
         
+    def extra_repr(self):
+        s = "{in_features}, {tau_min}-{tau_max} with {ntau} ntau, k={k}, c={c:.4f}"
+        s = s.format(**self.__dict__)
+        return s
         
     def reset(self):
         # reset all to zeros
         # self.t.zero_()
         # PBS/BGJ: Figure out how to zero grad here 
         # I think we might just be creating a new tensor
-        self.t = torch.zeros(self.s.shape[0], self._in_features).type(self._type)
+        self.t = torch.zeros(self.s.shape[0], self.in_features).type(self._type)
         
         
     def forward(self, inp, dur=None, alpha=None):
         """Handles input of (sequence_len, features) or (sequence_len, features, 2)
         """
-
+        self.reset()
         # we will eventually allow for full batches
         if dur is None:
-            dur = self._tau_min
+            dur = self.tau_min
         
         if alpha is None:
-            alpha = self._alpha
+            alpha = self.alpha
         
         # determine decay taking into account duration and alpha
-        e_alph_dur = self.e_s**(dur*alpha)
-
+        e_alph_dur = self._e_s**(dur*alpha)
+        e_alph_dur_update = e_alph_dur.unsqueeze(1).repeat(1, self.in_features)
         # first dimension is the length of the batch
-        output_tensor = torch.zeros(inp.shape[0], self._output_size[1],
-                                    self._output_size[2]).type(self._type)
-
-        # index into the batch dimension that should be 1
-        for i, item in enumerate(inp.split(1, dim=0)):
-            # At this point, item should be of size (in_features)
-            
-            if len(item.shape) == 3:
-                # item should be of shape [1, features, 2]
-                # create what tIN should be if they say input at time item[0, :, 1]
-                tIN = item[0,:,0]*(torch.exp(-self.s.view(-1, 1).repeat(1, self._in_features)*item[0,:,1]))
-            else:
-                # propagate features across s and apply decay (decay should be of shape [len(s)]
-                decay = (1-e_alph_dur)/(1.0*self.s).T
+        output_tensor = torch.zeros(inp.shape[0], self.output_size[1],
+                                    self.output_size[2]).type(self._type)
+        
+        if len(inp.shape) == 3:
+            # item should be of shape [1, features, 2]
+            # create what tIN should be if they say input at time item[0, :, 1]
+            inp = inp.unsqueeze(1).repeat(1, self.s.shape[0], 1, 1)
+            exp = -self.s.view(1, -1, 1).repeat(inp.shape[0], 1, self.in_features)*inp[:,:,:,1]
+            tIN = inp[:,:,:,0]*torch.exp(exp)
+        else:
+            # propagate features across s and apply decay (decay should be of shape [len(s)]
+            decay = ((1-e_alph_dur)/(1.0*self.s).T).unsqueeze(1)
+            inp = inp.unsqueeze(1)
+            tIN = torch.matmul(decay, inp)
                 
-                # At this point item should be (1, features) VERY IMPORTANT
-                tIN = decay.unsqueeze(1).mm(item)
-
+        # index into the batch dimension that should be 1
+        for i, IN in enumerate(tIN.split(1, dim=0)):
             # update t
-            self.t = e_alph_dur.unsqueeze(1).repeat(1, self._in_features)*self.t + tIN
+            self.t = e_alph_dur_update*self.t + IN
 
             # set the output
             output_tensor[i, :, :] = self.t
