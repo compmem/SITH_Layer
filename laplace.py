@@ -4,7 +4,7 @@
 
 import torch
 from torch import nn as nn
-
+from itertools import accumulate
 
 class Laplace(nn.Module):
     """Laplace Transform of the input signal."""
@@ -84,8 +84,8 @@ class Laplace(nn.Module):
         e_alph_dur = self._e_s**(dur*alpha)
         e_alph_dur_update = e_alph_dur.unsqueeze(1).repeat(1, self.in_features)
         # first dimension is the length of the batch
-        output_tensor = torch.zeros(inp.shape[0], self.output_size[1],
-                                    self.output_size[2]).type(self._type)
+        #output_tensor = torch.zeros(inp.shape[0], self.output_size[1],
+        #                            self.output_size[2]).type(self._type)
         
         if len(inp.shape) == 3:
             # item should be of shape [1, features, 2]
@@ -99,13 +99,26 @@ class Laplace(nn.Module):
             inp = inp.unsqueeze(1)
             tIN = torch.matmul(decay, inp)
                 
-        # index into the batch dimension that should be 1
-        for i, IN in enumerate(tIN.split(1, dim=0)):
-            # update t
-            self.t = e_alph_dur_update*self.t + IN
-
-            # set the output
-            output_tensor[i, :, :] = self.t
-
+        ## index into the batch dimension that should be 1
+        #for i, IN in enumerate(tIN.split(1, dim=0)):
+        #    # update t
+        #    self.t = e_alph_dur_update*self.t + IN
+        #
+        #    # set the output
+        #    output_tensor[i, :, :] = self.t
+        
+        # replace for loop with accumulate from itertools
+        output_tensor = accumulate([self.t] + list(tIN.split(1, dim=0)), 
+                                   lambda t, inp: e_alph_dur_update*t + inp,)
+        
+        # ignore the starting value we needed to provide
+        next(output_tensor)
+        
+        # concatenate the results
+        output_tensor = torch.cat(list(output_tensor), dim=0)
+        
+        # save out the state of t (the last state)
+        self.t = output_tensor[-1]
+        
         return output_tensor
     
