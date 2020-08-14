@@ -73,6 +73,5 @@ class iSITH(torch.nn.Module):
         """Takes in (Batch, 1, features, sequence) and returns (Batch, Taustar, features, sequence)"""
         assert(len(inp.shape) >= 4)        
         out = torch.conv2d(inp, self.filters, padding=[0, self.filters.shape[-1]])
-        
         # note we're scaling the output by both dt and the k/(k+1)
-        return out[:, :, :, 1:inp.shape[-1]+1]*self.dt*self.k/(self.k+1)
+        return out[:, :, :, 2:inp.shape[-1]+2]*self.dt*self.k/(self.k+1)
