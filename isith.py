@@ -3,7 +3,7 @@ from math import factorial
 
 # Impulse-based SITH class
 class iSITH(torch.nn.Module):
-    def __init__(self, tau_min=.1, tau_max=100., buff_max=200, k=50, ntau=50, dt=1, g=0.0,
+    def __init__(self, tau_min=.1, tau_max=100., buff_max=None, k=50, ntau=50, dt=1, g=0.0,
                  ttype=torch.FloatTensor):
         super(iSITH, self).__init__()
         """A SITH module using the perfect equation for the resulting ftilde
@@ -47,6 +47,8 @@ class iSITH(torch.nn.Module):
         self.k = k
         self.tau_min = tau_min
         self.tau_max = tau_max
+        if buff_max is None:
+            buff_max = 3*tau_max
         self.buff_max = buff_max
         self.ntau = ntau
         self.dt = dt
@@ -72,6 +74,8 @@ class iSITH(torch.nn.Module):
     def forward(self, inp):
         """Takes in (Batch, 1, features, sequence) and returns (Batch, Taustar, features, sequence)"""
         assert(len(inp.shape) >= 4)        
-        out = torch.conv2d(inp, self.filters, padding=[0, self.filters.shape[-1]])
+        out = torch.conv2d(inp, self.filters[:, :, :, -inp.shape[-1]:], 
+                           padding=[0, self.filters[:, :, :, -inp.shape[-1]:].shape[-1]])
         # note we're scaling the output by both dt and the k/(k+1)
+        # The hard coded 2's are due to unalignment in the conv2d. It helps I promise
         return out[:, :, :, 2:inp.shape[-1]+2]*self.dt*self.k/(self.k+1)
