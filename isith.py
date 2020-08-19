@@ -58,7 +58,7 @@ class iSITH(torch.nn.Module):
         
         self.tau_star = tau_min*(1+self.c)**torch.arange(ntau).type(torch.DoubleTensor)
         
-        self.times = torch.arange(0, buff_max, dt).type(torch.DoubleTensor)
+        self.times = torch.arange(dt, buff_max+dt, dt).type(torch.DoubleTensor)
         
         A = ((1/self.tau_star)*(k**(k+1)/factorial(k))*(self.tau_star**self.g)).unsqueeze(1)
         self.filters = A*((self.times.unsqueeze(0)/self.tau_star.unsqueeze(1))**(k+1)) * \
@@ -76,6 +76,7 @@ class iSITH(torch.nn.Module):
         assert(len(inp.shape) >= 4)        
         out = torch.conv2d(inp, self.filters[:, :, :, -inp.shape[-1]:], 
                            padding=[0, self.filters[:, :, :, -inp.shape[-1]:].shape[-1]])
+                           #padding=[0, self.filters.shape[-1]])
         # note we're scaling the output by both dt and the k/(k+1)
-        # The hard coded 2's are due to unalignment in the conv2d. It helps I promise
-        return out[:, :, :, 2:inp.shape[-1]+2]*self.dt*self.k/(self.k+1)
+        # Off by 1 introduced by the conv2d
+        return out[:, :, :, 1:inp.shape[-1]+1]*self.dt*self.k/(self.k+1)
