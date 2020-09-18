@@ -4,7 +4,7 @@
 
 import torch
 from torch import nn as nn
-from laplace import Laplace
+from .laplace import Laplace
 from math import factorial
 
 
